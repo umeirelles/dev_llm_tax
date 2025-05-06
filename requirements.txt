@@ -1,0 +1,19 @@
+# core
+streamlit>=1.33
+pandas
+openai  # or azure-openai, anthropic, etc.
+
+# langchain stack
+langchain>=0.2
+langchain-openai  # matches the provider you use
+chromadb>=0.6
+langchain-chroma
+
+# text processing
+tiktoken
+beautifulsoup4
+lxml
+
+# optional – if still in your code
+python-dotenv
+tabulate
