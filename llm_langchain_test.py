@@ -56,9 +56,6 @@ CHROMA_DIR = "docs/chroma"
 EMBED_MODEL = "text-embedding-3-large"
 EMBED_DIM = 3072  
 
-# DuckDB backend (avoids the sqlite >= 3.35 issue on Streamlit)
-def _duck_settings(path: str) -> Settings:
-    return Settings(chroma_db_impl="duckdb", persist_directory=path)
 
 HEADER_MAP = [
     ("#", "book"),
@@ -146,7 +143,6 @@ def build_vectorstore(md_path: str = MD_PATH,
         collection_name="law214",
         embedding_function=embedding,
         persist_directory=db_path,
-        client_settings=_duck_settings(db_path),   # DuckDB + Parquet
     )
     
     doc_store = InMemoryStore()           # parents live only for this run
@@ -180,7 +176,6 @@ def get_vectordb(db_path: str = CHROMA_DIR) -> Chroma:
         collection_name="law214",
         embedding_function=embedding,
         persist_directory=db_path,
-        client_settings=_duck_settings(db_path),
     )
 
 # --------------------------------------------------------------------------- #
@@ -193,7 +188,6 @@ def get_parent_retriever(db_path: str = CHROMA_DIR) -> ParentDocumentRetriever:
         collection_name="law214",
         embedding_function=embedding,
         persist_directory=db_path,
-        client_settings=_duck_settings(db_path),
     )
     doc_store = InMemoryStore()           # parents live only for this run
     return ParentDocumentRetriever(
