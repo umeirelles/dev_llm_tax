@@ -28,3 +28,6 @@ watchdog = "*"
 [requires]
 python_version = "3.12"
 python_full_version = "3.12.8"
+
+[pipenv]
+allow_prereleases = true
