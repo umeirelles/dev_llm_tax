@@ -22,7 +22,7 @@ langchain-chroma = "==0.2.1"
 langchain = ">=0.2.0"
 langchain-community = "*"
 watchdog = "*"
-pysqlite3-binary = { version = "0.5.2.post2", markers = "platform_system != 'Darwin'" }
+pysqlite3-binary = "==0.5.2.post2" 
 pysqlite3        = { version = "0.5.4",       markers = "platform_system == 'Darwin'" }
 docker = "*"
 
