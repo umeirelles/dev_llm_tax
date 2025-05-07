@@ -23,6 +23,7 @@ import shutil
 import math
 from pathlib import Path
 from typing import List, Tuple
+import numpy as np
 
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
@@ -31,10 +32,15 @@ from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
 )
 from langchain_chroma import Chroma
+from chromadb.config import Settings
+import chromadb  # new PersistentClient
 
 from langchain.retrievers import ParentDocumentRetriever        
 from langchain.storage import InMemoryStore, LocalFileStore
 from langchain.prompts import PromptTemplate
+
+
+
 
 # --------------------------------------------------------------------------- #
 # 0.  Environment                                                             #
@@ -49,6 +55,10 @@ MD_PATH = "output/law214.md"
 CHROMA_DIR = "docs/chroma"
 EMBED_MODEL = "text-embedding-3-large"
 EMBED_DIM = 3072  
+
+# DuckDB backend (avoids the sqlite >= 3.35 issue on Streamlit)
+def _duck_settings(path: str) -> Settings:
+    return Settings(chroma_db_impl="duckdb", persist_directory=path)
 
 HEADER_MAP = [
     ("#", "book"),
@@ -67,9 +77,15 @@ PARA_SPLITTER_KWARGS = dict(
     separators=[r"\n#+\s*Art\.?", "\n\n", "\n"],
 )
 
+# --- refinamento: impedir fatias só‑cabeçalho --------------------------
+# (min_length não é suportado pela API atual do TextSplitter)
+PARA_SPLITTER_KWARGS.update(
+    keep_separator=False,   # não duplica o “### Art. …”
+)
+
 # --- Retrieval defaults ----------------------------------------------------- #
-DEFAULT_K_PARENTS  = 5   # number of parent articles to keep
-DEFAULT_K_FETCH    = 60   # child slices fetched before merge
+DEFAULT_K_PARENTS  = 10   # number of parent articles to keep
+DEFAULT_K_FETCH    = 1500   # child slices fetched before merge
 
 # --------------------------------------------------------------------------- #
 # 2.  Build / rebuild the vector store                                        #
@@ -88,10 +104,36 @@ def build_vectorstore(md_path: str = MD_PATH,
     )
     parent_docs = header_splitter.split_text(md_text)
 
-    # tag metadata once
+    # ─── Análise de cada artigo antes de indexar ──────────────────────────
+    import re, tiktoken
+
+    enc = tiktoken.encoding_for_model("gpt-4o-mini")  # usa mesmo encoder do modelo
+
+    # parâmetros de corte
+    _MIN_CHARS   = 80          # evita “CAPÍTULO I\nDA ZFM…”
+    _MIN_TOKENS  = 40
+    _DIGIT_RE    = re.compile(r"\d|§|%|\bart\.?\b", flags=re.I)
+
+    def _flag_has_body(txt: str) -> bool:
+        """True se o artigo contém corpo relevante (texto > cabeçalho)."""
+        if len(txt.strip()) < _MIN_CHARS:
+            return False
+        if len(enc.encode(txt)) < _MIN_TOKENS:
+            return False
+        return bool(_DIGIT_RE.search(txt))   # precisa ter número, § ou %
+
     for d in parent_docs:
-        d.metadata["lang"] = "pt-BR"
-        d.metadata["has_body"] = True
+        txt = d.page_content
+
+        d.metadata.update(
+            {
+                "lang": "pt-BR",
+                "token_count": len(enc.encode(txt)),
+                "has_body": _flag_has_body(txt),
+            }
+        )
+        # cabeçalho-puro = quando NÃO tem corpo relevante
+        d.metadata["header_only"] = not d.metadata["has_body"]
 
     # --- 2.2  child splitter ------------------------------------------- #
     child_splitter = RecursiveCharacterTextSplitter(**PARA_SPLITTER_KWARGS)
@@ -100,9 +142,11 @@ def build_vectorstore(md_path: str = MD_PATH,
     shutil.rmtree(db_path, ignore_errors=True)          # clean slate
     embedding = OpenAIEmbeddings(model=EMBED_MODEL, dimensions=EMBED_DIM)
 
+    client = chromadb.PersistentClient(path=db_path)
     vectordb = Chroma(
+        client=client,
+        collection_name="law214",
         embedding_function=embedding,
-        persist_directory=db_path,
     )
     
     doc_store = InMemoryStore()           # parents live only for this run
@@ -132,9 +176,11 @@ def get_vectordb(db_path: str = CHROMA_DIR) -> Chroma:
             "Vector store not found. Run with --reindex first."
         )
     embedding = OpenAIEmbeddings(model=EMBED_MODEL, dimensions=EMBED_DIM)
+    client = chromadb.PersistentClient(path=db_path)
     return Chroma(
+        client=client,
+        collection_name="law214",
         embedding_function=embedding,
-        persist_directory=db_path,
     )
 
 # --------------------------------------------------------------------------- #
@@ -143,9 +189,11 @@ def get_vectordb(db_path: str = CHROMA_DIR) -> Chroma:
 def get_parent_retriever(db_path: str = CHROMA_DIR) -> ParentDocumentRetriever:
     """Return a ParentDocumentRetriever that yields whole articles."""
     embedding = OpenAIEmbeddings(model=EMBED_MODEL, dimensions=EMBED_DIM)
+    client = chromadb.PersistentClient(path=db_path)
     vectordb = Chroma(
+        client=client,
+        collection_name="law214",
         embedding_function=embedding,
-        persist_directory=db_path,
     )
     doc_store = InMemoryStore()           # parents live only for this run
     return ParentDocumentRetriever(
@@ -167,6 +215,7 @@ def retrieve_parents(
     k: int = DEFAULT_K_PARENTS,
     k_fetch: int = DEFAULT_K_FETCH,
     mmr: bool = False,
+    lambda_mult: float = 0.8,
 ) -> List[Tuple[Document, float]]:
     """
     Core retrieval routine used by both `ask_question` (CLI print) and the
@@ -175,19 +224,37 @@ def retrieve_parents(
     """
     # ---------- 1) child‑level fetch ----------------------------------- #
     if not mmr:
+        # caminho antigo — distância fornecida pela API
         child_pairs = vectordb.similarity_search_with_score(
             query, k=k_fetch, filter={"has_body": True}
         )
     else:
+        # ---------- (1)  MMR devolve só os documentos -----------------
         mmr_docs = vectordb.as_retriever(
             search_type="mmr",
             search_kwargs={
                 "k": k_fetch,
-                "lambda_mult": 0.5,
+                "lambda_mult": lambda_mult,   # 1=similarity_search  0=pure diversity, ignoring the user query
                 "filter": {"has_body": True},
             },
         ).invoke(query)
-        child_pairs = [(d, float("nan")) for d in mmr_docs]
+
+        # ---------- (2)  embed uma única vez o query ------------------
+        embed = vectordb._embedding_function          # mesmo objeto usado pelo VS
+        q_vec = np.asarray(embed.embed_query(query))
+
+        # ---------- (3)  embed em lote os docs MMR -------------------
+        d_texts = [d.page_content for d in mmr_docs]
+        d_vecs  = embed.embed_documents(d_texts)      # lista[list[float]]
+
+        # ---------- (4)  distância cosseno  →  mesmo “scale” do Chroma
+        def cos_dist(a: np.ndarray, b: np.ndarray) -> float:
+            return 1.0 - (np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9))
+
+        child_pairs = [
+            (doc, cos_dist(q_vec, np.asarray(vec)))
+            for doc, vec in zip(mmr_docs, d_vecs)
+        ]
 
     # ---------- 2) merge children -> parents --------------------------- #
     from collections import defaultdict
@@ -202,9 +269,11 @@ def retrieve_parents(
         slices.sort(key=lambda p: p[1])          # best slice first
         rep_doc, best_dist = slices[0]
 
-        # de‑duplicate the 100‑token overlap
-        parts = [d.page_content for d, _ in slices]
-        text = parts[0] + "".join(p[100:] for p in parts[1:])
+        # de‑duplicate the overlap (use splitter config)
+        overlap = PARA_SPLITTER_KWARGS.get("chunk_overlap", 0)
+        parts   = [d.page_content for d, _ in slices]
+        # remove exactly the overlap we introduced (and no more)
+        text    = parts[0] + "".join(p[overlap:] for p in parts[1:])
 
         parent_doc = Document(page_content=text, metadata=rep_doc.metadata)
         parents.append((parent_doc, best_dist))
@@ -218,13 +287,16 @@ from langchain_core.retrievers import BaseRetriever
 
 class ParentListRetriever(BaseRetriever):
     """Tiny wrapper so RetrievalQA can reuse the same parent selection."""
-    def __init__(self, vectordb: Chroma, *, mmr: bool):
+    def __init__(self, vectordb: Chroma, *, mmr: bool, lambda_mult: float = 0.8):
         super().__init__()
         self._db = vectordb
         self._mmr = mmr
+        self._lambda_mult = lambda_mult
 
     def _get_relevant_documents(self, query: str, *, run_manager=None, **kwargs):
-        parents = retrieve_parents(query, self._db, mmr=self._mmr)
+        parents = retrieve_parents(
+            query, self._db, mmr=self._mmr, lambda_mult=self._lambda_mult
+        )
         return [d for d, _ in parents]
 
 
@@ -235,6 +307,7 @@ def ask_question(
     k: int = DEFAULT_K_PARENTS,
     k_fetch: int = DEFAULT_K_FETCH,
     mmr: bool = False,
+    lambda_mult: float = 0.8,
 ) -> List[Tuple[float, str, str]]:
     """
     Fetch *k_fetch* child chunks, merge them into parent articles,
@@ -252,6 +325,7 @@ def ask_question(
         k=k,
         k_fetch=k_fetch,
         mmr=mmr,
+        lambda_mult=lambda_mult,
     )
 
     def path(meta: dict) -> str:
@@ -271,21 +345,35 @@ def ask_question(
 from langchain_openai import ChatOpenAI
 from langchain.chains import RetrievalQA
 
+# ----------------------------------- PROMPT ------------------------------------------------ #
 PROMPT_TXT = """
-Responda em português citando **exatamente** os percentuais (quando houver) e artigos.
-Se não encontrar um número nos trechos abaixo, diga “Não localizado”.
-Após cada item, inclua a citação entre parênteses do artigo e/ou inciso e/ou parágrafo da lei.
-{context}
-Pergunta: {question}
-Resposta (máx. 300 palavras):
-"""
+Você é tributarista especializado na Lei Complementar 214/2025
+(IBS, CBS e IS).  
+Responda **apenas** com base nos trechos abaixo; use conhecimento externo apenas sobre temas diretamente tratados na lei complementar 214/2025.  
+Se algum dado (percentual, artigo, inciso, parágrafo) não aparecer
+explicitamente, diga **“Não localizado”**.  
+Nunca invente números ou fundamentos jurídicos.
+Sempre que possível, deixar claro quando a tributação for vincula às aquisições/entradas ou vendas/saídas.
+Formato da resposta  
+• Português formal  
+• máx. 250 palavras  
+• Itens numerados:  
+  1. <descrição detalhada> — <percentual ou termo-chave>, citação (Art. ###, § #, I, …)  
 
-def get_qa_chain(*, mmr: bool = False) -> RetrievalQA:
+
+{context}
+
+Pergunta: {question}
+"""
+# ------------------------------------------------------------------------------------------- #
+
+def get_qa_chain(*, mmr: bool = False, lambda_mult: float = 0.8) -> RetrievalQA:
     """Return a RetrievalQA chain that shares retrieval logic with CLI."""
     llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0)
     vectordb = get_vectordb()                     # load existing children index
-    qa_ret   = ParentListRetriever(vectordb, mmr=mmr)
-
+    qa_ret   = ParentListRetriever(
+        vectordb, mmr=mmr, lambda_mult=lambda_mult
+    )
 
     # cria o template UMA ÚNICA VEZ
     PROMPT = PromptTemplate.from_template(PROMPT_TXT)

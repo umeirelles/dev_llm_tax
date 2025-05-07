@@ -20,10 +20,10 @@ import pandas as pd
 # Backend helpers (importados do seu módulo)
 # ────────────────────────────────────────────────────────────────────────────
 from llm_langchain_test import (
-    CHROMA_DIR,
     get_vectordb,
     ask_question,
     get_qa_chain,
+    DEFAULT_K_PARENTS,
 )
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -55,10 +55,24 @@ except FileNotFoundError:
 # 3. Sidebar – parâmetros
 # ────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.header("⚙️  Opções de busca")
+    st.header("⚙️  Knobs - Recall LLM")
 
-    k_hits = st.slider("Artigos retornados (k)", 3, 15, 5)
+    k_hits = st.slider(
+        "Artigos retornados (k)",
+        min_value=1,
+        max_value=20,
+        value=DEFAULT_K_PARENTS,
+    )
     use_mmr = st.checkbox("Buscar via MMR (híbrido denso + lexical)", value=False)
+
+    lambda_mult = st.slider(
+        "λ  (lambda_mult) — equilíbrio sim/diversidade",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.8,
+        step=0.05,
+    )
+
     want_answer = st.checkbox("Gerar resposta sintetizada (LLM)", value=True)
 
     st.divider()
@@ -88,6 +102,7 @@ hits = ask_question(
     vectordb=vectordb,
     k=k_hits,
     mmr=use_mmr,
+    lambda_mult=lambda_mult,
 )
 
 if not hits:
@@ -107,15 +122,28 @@ df = pd.DataFrame(
     ]
 )
 
-st.subheader("🔎 Passagens selecionadas")
-st.dataframe(df, use_container_width=True, hide_index=True)
+st.markdown("### 🔎 Passagens selecionadas")
+
+for dist, path, snippet in hits:
+    sim = "—" if math.isnan(dist) else f"{1/(1+dist):.3f}"
+    dist_txt = "—" if math.isnan(dist) else f"{dist:.3f}"
+    st.markdown(
+        f"""
+        **Distância:** {dist_txt}  **Similaridade:** {sim}  
+        **Local:** `{path}`  
+        """,
+        unsafe_allow_html=True,
+    )
+    # mostra o trecho sem blockquote ↓
+    st.markdown(snippet)
+    st.divider()  
 
 # ────────────────────────────────────────────────────────────────────────────
 # 6. Resposta sintetizada opcional
 # ────────────────────────────────────────────────────────────────────────────
 if want_answer:
     with st.spinner("Gerando resposta…"):
-        qa_chain = get_qa_chain(mmr=use_mmr)
+        qa_chain = get_qa_chain(mmr=use_mmr, lambda_mult=lambda_mult)
         resp = qa_chain.invoke({"query": query})
         answer = resp["result"]
 
