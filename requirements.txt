@@ -2,7 +2,8 @@
 streamlit>=1.33
 pandas
 openai  # or azure-openai, anthropic, etc.
-pysqlite3-binary==0.5.2.post2
+pysqlite3-binary==0.5.2.post2 ; platform_system=="Linux"
+pysqlite3 ; platform_system=="Darwin"
 
 # langchain stack
 langchain>=0.2
