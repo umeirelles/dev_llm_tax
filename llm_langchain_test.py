@@ -142,11 +142,11 @@ def build_vectorstore(md_path: str = MD_PATH,
     shutil.rmtree(db_path, ignore_errors=True)          # clean slate
     embedding = OpenAIEmbeddings(model=EMBED_MODEL, dimensions=EMBED_DIM)
 
-    client = chromadb.PersistentClient(path=db_path)
     vectordb = Chroma(
-        client=client,
         collection_name="law214",
         embedding_function=embedding,
+        persist_directory=db_path,
+        client_settings=_duck_settings(db_path),   # DuckDB + Parquet
     )
     
     doc_store = InMemoryStore()           # parents live only for this run
@@ -176,11 +176,11 @@ def get_vectordb(db_path: str = CHROMA_DIR) -> Chroma:
             "Vector store not found. Run with --reindex first."
         )
     embedding = OpenAIEmbeddings(model=EMBED_MODEL, dimensions=EMBED_DIM)
-    client = chromadb.PersistentClient(path=db_path)
     return Chroma(
-        client=client,
         collection_name="law214",
         embedding_function=embedding,
+        persist_directory=db_path,
+        client_settings=_duck_settings(db_path),
     )
 
 # --------------------------------------------------------------------------- #
@@ -189,11 +189,11 @@ def get_vectordb(db_path: str = CHROMA_DIR) -> Chroma:
 def get_parent_retriever(db_path: str = CHROMA_DIR) -> ParentDocumentRetriever:
     """Return a ParentDocumentRetriever that yields whole articles."""
     embedding = OpenAIEmbeddings(model=EMBED_MODEL, dimensions=EMBED_DIM)
-    client = chromadb.PersistentClient(path=db_path)
     vectordb = Chroma(
-        client=client,
         collection_name="law214",
         embedding_function=embedding,
+        persist_directory=db_path,
+        client_settings=_duck_settings(db_path),
     )
     doc_store = InMemoryStore()           # parents live only for this run
     return ParentDocumentRetriever(
