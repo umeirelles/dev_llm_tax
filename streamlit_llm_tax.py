@@ -16,9 +16,15 @@ import os
 import streamlit as st
 import pandas as pd
 
-__import__('pysqlite3')
-import sys
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+import platform, sys
+
+if platform.system() == "Linux":
+    try:
+        import pysqlite3  # roda apenas no container Linux/Streamlit Cloud
+        sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+    except ModuleNotFoundError:
+        # se o wheel não baixou por qualquer motivo, continua com sqlite3 nativo
+        pass
 
 # ────────────────────────────────────────────────────────────────────────────
 # Backend helpers (importados do seu módulo)
