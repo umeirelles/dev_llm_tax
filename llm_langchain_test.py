@@ -31,7 +31,7 @@ from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
 )
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import Chroma
 from chromadb.config import Settings
 import chromadb  # new PersistentClient
 
