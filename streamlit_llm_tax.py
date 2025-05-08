@@ -16,6 +16,10 @@ import os
 import streamlit as st
 import pandas as pd
 
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
 # ────────────────────────────────────────────────────────────────────────────
 # Backend helpers (importados do seu módulo)
 # ────────────────────────────────────────────────────────────────────────────

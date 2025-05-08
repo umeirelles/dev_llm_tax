@@ -7,8 +7,9 @@ openai  # or azure-openai, anthropic, etc.
 # langchain stack
 langchain>=0.2
 langchain-openai  # matches the provider you use
-chromadb>=0.6
-langchain-chroma
+chromadb>=0.6.2
+langchain-chroma>=0.2.0
+pysqlite3-binary>=0.5.4 
 
 # text processing
 tiktoken
