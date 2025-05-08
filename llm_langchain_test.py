@@ -31,8 +31,8 @@ from langchain_text_splitters import (
     MarkdownHeaderTextSplitter,
     RecursiveCharacterTextSplitter,
 )
-from langchain_community.vectorstores import Chroma
-from chromadb.config import Settings
+from langchain_chroma import Chroma
+
 import chromadb  # new PersistentClient
 
 from langchain.retrievers import ParentDocumentRetriever        
@@ -55,6 +55,14 @@ MD_PATH = "output/law214.md"
 CHROMA_DIR = "docs/chroma"
 EMBED_MODEL = "text-embedding-3-large"
 EMBED_DIM = 3072  
+
+# --------------------------------------------------------------------------- #
+# helper – novo cliente Chroma (DuckDB/Parquet, sem SQLite)                   #
+# --------------------------------------------------------------------------- #
+def get_chroma_client(path: str = CHROMA_DIR):
+    """Chroma PersistentClient usando DuckDB/Parquet."""
+    import chromadb
+    return chromadb.PersistentClient(path=path)
 
 
 HEADER_MAP = [
@@ -139,10 +147,11 @@ def build_vectorstore(md_path: str = MD_PATH,
     shutil.rmtree(db_path, ignore_errors=True)          # clean slate
     embedding = OpenAIEmbeddings(model=EMBED_MODEL, dimensions=EMBED_DIM)
 
-    vectordb = Chroma(
+    client = get_chroma_client(db_path)
+    vectordb = Chroma(                           # ALTERADO
+        client=client,
         collection_name="law214",
         embedding_function=embedding,
-        persist_directory=db_path,
     )
     
     doc_store = InMemoryStore()           # parents live only for this run
@@ -166,16 +175,16 @@ def build_vectorstore(md_path: str = MD_PATH,
 # 3.  Retrieval helpers                                                       #
 # --------------------------------------------------------------------------- #
 def get_vectordb(db_path: str = CHROMA_DIR) -> Chroma:
-    """Load an existing Chroma collection (error if missing)."""
     if not Path(db_path).exists():
         raise FileNotFoundError(
             "Vector store not found. Run with --reindex first."
         )
     embedding = OpenAIEmbeddings(model=EMBED_MODEL, dimensions=EMBED_DIM)
+    client = get_chroma_client(db_path)      # NOVO
     return Chroma(
+        client=client,
         collection_name="law214",
         embedding_function=embedding,
-        persist_directory=db_path,
     )
 
 # --------------------------------------------------------------------------- #
@@ -184,10 +193,11 @@ def get_vectordb(db_path: str = CHROMA_DIR) -> Chroma:
 def get_parent_retriever(db_path: str = CHROMA_DIR) -> ParentDocumentRetriever:
     """Return a ParentDocumentRetriever that yields whole articles."""
     embedding = OpenAIEmbeddings(model=EMBED_MODEL, dimensions=EMBED_DIM)
+    client = get_chroma_client(db_path)      # NOVO
     vectordb = Chroma(
+        client=client,
         collection_name="law214",
         embedding_function=embedding,
-        persist_directory=db_path,
     )
     doc_store = InMemoryStore()           # parents live only for this run
     return ParentDocumentRetriever(
