@@ -43,8 +43,16 @@ from langchain.prompts import PromptTemplate
 # --------------------------------------------------------------------------- #
 # 0.  Environment                                                             #
 # --------------------------------------------------------------------------- #
-load_dotenv()
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]  
+from dotenv import load_dotenv
+import os
+
+load_dotenv()                       # carrega .env se existir
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise RuntimeError(
+        "OPENAI_API_KEY não encontrada. Defina no .env (ambiente local) "
+        "ou nas Secrets do Streamlit Cloud."
+    )
 
 # --------------------------------------------------------------------------- #
 # 1.  Constants                                                               #
