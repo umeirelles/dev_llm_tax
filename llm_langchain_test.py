@@ -46,6 +46,15 @@ from langchain.prompts import PromptTemplate
 from dotenv import load_dotenv
 import os
 
+# --------------------------------------------------------------------------- #
+# LangSmith Tracing                                                             #
+# --------------------------------------------------------------------------- #
+
+LANGSMITH_TRACING=True
+LANGSMITH_ENDPOINT="https://api.smith.langchain.com"
+LANGSMITH_API_KEY="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"
+LANGSMITH_PROJECT="llm-tax-br"
+
 load_dotenv()                       # carrega .env se existir
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
