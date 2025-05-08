@@ -12,11 +12,16 @@ Requisitos:
 from pathlib import Path
 import math
 import os
-
-import streamlit as st
 import pandas as pd
-
 import platform, sys
+import streamlit as st
+
+st.set_page_config(
+    page_title="[demo] IA Chat : Reforma Trib",
+    page_icon=":material/network_intel_node:",
+    layout="wide",
+)
+
 
 if platform.system() == "Linux":
     try:
@@ -39,13 +44,9 @@ from llm_langchain_test import (
 # ────────────────────────────────────────────────────────────────────────────
 # 1. Configuração da página
 # ────────────────────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Lei 214 • RAG demo",
-    page_icon="⚖️",
-    layout="centered",
-)
 
-st.title("Pergunte sobre a Lei Complementar 214/2025 (IBS + CBS + IS)")
+
+st.title("IA Chat : Reforma Tributária Lei Complementar 214/2025")
 
 # ────────────────────────────────────────────────────────────────────────────
 # 2. Carrega (ou avisa) o vetor-store
@@ -65,7 +66,7 @@ except FileNotFoundError:
 # 3. Sidebar – parâmetros
 # ────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.header("⚙️  Knobs - Recall LLM")
+    st.header("⚙️  Knobs : Recall LLM")
 
     k_hits = st.slider(
         "Artigos retornados (k)",
@@ -73,10 +74,10 @@ with st.sidebar:
         max_value=20,
         value=DEFAULT_K_PARENTS,
     )
-    use_mmr = st.checkbox("Buscar via MMR (híbrido denso + lexical)", value=False)
+    use_mmr = st.checkbox("Habilitar MMR (híbrido denso + lexical)", value=False)
 
     lambda_mult = st.slider(
-        "λ  (lambda_mult) — equilíbrio sim/diversidade",
+        "λ  (lambda_mult) : diversidade(0) >> similaridade(1)",
         min_value=0.0,
         max_value=1.0,
         value=0.8,
@@ -104,6 +105,22 @@ query = st.text_input(
 if not query:
     st.stop()
 
+
+# ────────────────────────────────────────────────────────────────────────────
+# 6. Resposta sintetizada opcional
+# ────────────────────────────────────────────────────────────────────────────
+if want_answer:
+    with st.spinner("Gerando resposta…"):
+        qa_chain = get_qa_chain(mmr=use_mmr, lambda_mult=lambda_mult)
+        resp = qa_chain.invoke({"query": query})
+        answer = resp["result"]
+
+    st.subheader("🧠 Resposta sintetizada")
+    st.write(answer)
+
+st.text("\n")
+st.divider()
+st.warning("Veja abaixo os artigos selecionados pela IA.")
 # ────────────────────────────────────────────────────────────────────────────
 # 5. Busca de passagens
 # ────────────────────────────────────────────────────────────────────────────
@@ -148,17 +165,7 @@ for dist, path, snippet in hits:
     st.markdown(snippet)
     st.divider()  
 
-# ────────────────────────────────────────────────────────────────────────────
-# 6. Resposta sintetizada opcional
-# ────────────────────────────────────────────────────────────────────────────
-if want_answer:
-    with st.spinner("Gerando resposta…"):
-        qa_chain = get_qa_chain(mmr=use_mmr, lambda_mult=lambda_mult)
-        resp = qa_chain.invoke({"query": query})
-        answer = resp["result"]
 
-    st.subheader("🧠 Resposta sintetizada")
-    st.write(answer)
 
 # ────────────────────────────────────────────────────────────────────────────
 # 7. Rodapé
