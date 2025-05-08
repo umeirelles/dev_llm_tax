@@ -33,8 +33,6 @@ from langchain_text_splitters import (
 )
 from langchain_chroma import Chroma
 
-import chromadb  # new PersistentClient
-
 from langchain.retrievers import ParentDocumentRetriever        
 from langchain.storage import InMemoryStore, LocalFileStore
 from langchain.prompts import PromptTemplate
