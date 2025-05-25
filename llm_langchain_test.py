@@ -24,15 +24,9 @@ import math
 from pathlib import Path
 from typing import List, Tuple
 import numpy as np
-
-from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
-from langchain_text_splitters import (
-    MarkdownHeaderTextSplitter,
-    RecursiveCharacterTextSplitter,
-)
+from langchain_text_splitters import (MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter,)
 from langchain_chroma import Chroma
-
 from langchain.retrievers import ParentDocumentRetriever        
 from langchain.storage import InMemoryStore, LocalFileStore
 from langchain.prompts import PromptTemplate
@@ -45,7 +39,6 @@ from langchain.prompts import PromptTemplate
 # --------------------------------------------------------------------------- #
 from dotenv import load_dotenv
 import os
-
 
 
 load_dotenv()                       # carrega .env se existir
@@ -97,8 +90,8 @@ PARA_SPLITTER_KWARGS.update(
 )
 
 # --- Retrieval defaults ----------------------------------------------------- #
-DEFAULT_K_PARENTS  = 10   # number of parent articles to keep
-DEFAULT_K_FETCH    = 1500   # child slices fetched before merge
+DEFAULT_K_PARENTS  = 12   # number of parent articles to keep
+DEFAULT_K_FETCH    = 1800   # child slices fetched before merge
 
 # --------------------------------------------------------------------------- #
 # 2.  Build / rebuild the vector store                                        #
@@ -359,24 +352,40 @@ from langchain.chains import RetrievalQA
 
 # ----------------------------------- PROMPT ------------------------------------------------ #
 PROMPT_TXT = """
-Você é tributarista especializado na Lei Complementar 214/2025
-(IBS, CBS e IS).  
-Responda **apenas** com base nos trechos abaixo; use conhecimento externo apenas sobre temas diretamente tratados na lei complementar 214/2025.  
-Se algum dado (percentual, artigo, inciso, parágrafo) não aparecer
-explicitamente, diga **“Não localizado”**.  
-Nunca invente números ou fundamentos jurídicos.
-Sempre que possível, deixar claro quando a tributação for vincula às aquisições/entradas ou vendas/saídas.
-Formato da resposta  
-• Português formal  
-• máx. 250 palavras  
-• Itens numerados:  
-  1. <descrição detalhada> — <percentual ou termo-chave>, citação (Art. ###, § #, I, …)  
+Você é tributarista e professor da Lei Complementar 214/2025 (IBS, CBS, IS).
 
+Responda **exclusivamente** com base nos trechos abaixo; não utilize qualquer outra fonte.
+
+Instruções obrigatórias
+• Se um dado (alíquota, artigo, §, inciso) **não estiver nos trechos**, escreva **“Não localizado”**.  
+• **Jamais** presuma, infira ou invente percentuais, fundamentos ou interpretações.  
+• **Inclua somente os dispositivos que respondam diretamente à pergunta**; ignore trechos sem relação com o tema solicitado.  
+• Liste todas as hipóteses pertinentes ao assunto da pergunta que constem nos trechos, criando itens separados quando parágrafos ou incisos estabelecerem regras autônomas.
+• Para **cada item** informe, em frase corrida:  
+  – se a regra se aplica **na entrada** (aquisição, importação, retorno) **ou na saída** (venda, prestação);  
+  – **quem** é o responsável legal (fornecedor, adquirente, importador, plataforma etc.);  
+  – a **consequência fiscal** (crédito integral, crédito presumido de x %, estorno, recolhimento).  
+• Quando o texto legal usar “poderá apropriar/utilizar créditos” **sem percentual**, rotule como **crédito integral** e identifique o tributo.  
+• Se um mesmo dispositivo conceder percentuais distintos para IBS e CBS, crie **itens separados** (não misture tributos).  
+• Não repita o caput quando os §§ já o detalham, salvo se contiver regra autônoma.  
+• Se houver exceções, opções ou condicionantes, mencione‑as brevemente.  
+• Citações: sempre **Art. …**, indicando, quando existente, **§** e **inciso**.
+
+Formato da resposta  
+• Português formal e técnico, até 320 palavras.  
+• Lista numerada; cada item **é uma frase** que termina com a citação:  
+  1. <descrição objetiva (entrada/saída, responsável, consequência)>, citação (Art. ###, § #, …)
+
+Exemplo  
+1. Na importação para revenda presencial na ZFM, o importador obtém **crédito presumido** de IBS de 50 % (§ 1º) e, adicionalmente, **crédito integral** do IBS pago (§ 3º), citação (Art. 444, §§ 1º‑3º).
 
 {context}
 
 Pergunta: {question}
 """
+
+
+
 # ------------------------------------------------------------------------------------------- #
 
 def get_qa_chain(*, mmr: bool = False, lambda_mult: float = 0.8) -> RetrievalQA:
