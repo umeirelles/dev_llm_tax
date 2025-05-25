@@ -99,7 +99,7 @@ with st.sidebar:
 # ────────────────────────────────────────────────────────────────────────────
 query = st.text_input(
     "Sua pergunta:",
-    placeholder="Ex.: Quais alíquotas IBS incidem sobre exportações?",
+    placeholder="Ex.: O que é split payment?",
 )
 
 if not query:
